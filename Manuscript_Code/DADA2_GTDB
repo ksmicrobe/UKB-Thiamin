@@ -1,0 +1,71 @@
+library(phyloseq)
+library(microbiome)
+library(tidyverse)
+library(ggplot2)
+library(rcompanion)
+library(otu2ot)
+library(speedyseq)
+library(dada2)
+library(readxl)
+library(decontam)
+
+seqtab_nochim <- readRDS("seqtab_nochim_UKB") #Read in from "DADA2_Thermus_thermophilus_counts_generation
+GTDB_w_sp <- "/Users/kellyshannon/BIOINFORMATICS/GTDB/GTDB_bac120_arc122_ssu_r202_fullTaxo.fa.gz"
+ukb_gtdb_tax <- assignTaxonomy(seqtab_nochim, GTDB_w_sp, multithread = T)
+saveRDS(ukb_gtdb_tax, "ukb_gtdb_tax")
+
+gtdb_seqtab <- data.frame(t(seqtab_nochim))
+rownames(gtdb_seqtab) <- rownames(ukb_gtdb_tax)
+gtdb_meta_first <- data.frame(read_excel(path = "~/Library/CloudStorage/OneDrive-Personal/Documents/UKB_full_16S_meta.xlsx"))
+rownames(gtdb_meta_first) <- colnames(gtdb_seqtab)
+raw_ps_gtdb <- phyloseq::phyloseq(otu_table(as.matrix(gtdb_seqtab), taxa_are_rows = T), 
+                              tax_table(as.matrix(ukb_gtdb_tax)), 
+                              sample_data(gtdb_meta_first))
+
+nomito_ps_gtdb <- subset_taxa(physeq = raw_ps_gtdb, !Family %in% "Mitochondria")
+nochloro_ps_gtdb <- subset_taxa(physeq = nomito_ps_gtdb, !Order %in% "Chloroplast")
+noTt_ps_gtdb <- subset_taxa(physeq = nochloro_ps_gtdb, !Phylum %in% "Deinococcota") #Removing T. thermophilus internal standard
+noNA_ps_gtdb <- subset_taxa(physeq = noTt_ps_gtdb, !Kingdom %in% NA)
+noNA_ps_gtdb <- subset_taxa(physeq = noNA_ps_gtdb, !Phylum %in% NA) #Further cleanup of non-annotated taxa 
+
+gtdb_ASV <- data.frame(otu_table(noNA_ps_gtdb))
+gtdb_tax <- data.frame(tax_table(noNA_ps_gtdb))
+
+gtdb_asvs <- lessR::to("ASV", nrow(gtdb_ASV))
+prok_seqs <- rownames(gtdb_ASV)
+
+gtdb_tax$"ASV" <- gtdb_asvs
+rownames(gtdb_tax) <- gtdb_asvs
+rownames(gtdb_ASV) <- gtdb_asvs
+
+saveRDS(gtdb_tax, "ukb_phylo_tax_gtdb")
+saveRDS(gtdb_ASV, "ukb_phylo_counts_gtdb")
+
+gtdb_meta <- data.frame(read_excel(path = "~/Library/CloudStorage/OneDrive-Personal/Documents/UKB_full_16S_meta.xlsx"))
+
+rownames(gtdb_meta) <- gtdb_meta$Sample
+colnames(gtdb_ASV) <- rownames(gtdb_meta) #check that they matche sample IDs first
+
+gtdb_tax$Species <- ifelse(gtdb_tax$Species != NA, 
+                                paste0(gtdb_tax$Genus, " ", 
+                                       gtdb_tax$Species), 
+                           gtdb_tax$Species) #Combine genus and species names for plots
+gtdb_ps <- phyloseq(tax_table(as.matrix(gtdb_tax)), 
+                      otu_table(as.matrix(gtdb_ASV), taxa_are_rows = TRUE), 
+                      sample_data(gtdb_meta))
+
+sample_data(gtdb_ps)$is.neg <- sample_data(gtdb_ps)$Sample_or_Control == "Control"
+contamdf.prev <- isContaminant(gtdb_ps, method = "prevalence", neg = "is.neg")
+which(contamdf.prev$contaminant)
+contam_ASVs <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE",])
+clean_ASVs <- rownames(contamdf.prev[contamdf.prev$contaminant == "FALSE",])
+contam_ASVs
+
+good_seasons <- c(2,3)
+good_type <- c("SW","HZ")
+clean_gtdb_ps <- gtdb_ps %>% subset_taxa(!ASV %in% contam_ASVs) %>% 
+  subset_samples(Sampling %in% good_seasons) %>% 
+  subset_samples(Type %in% good_type) %>% subset_samples(dTRCs == "YES") %>% 
+  ps_filter()
+
+saveRDS(clean_gtdb_ps, "clean_gtdb_ps")
