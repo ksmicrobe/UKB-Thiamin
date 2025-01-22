@@ -14,10 +14,11 @@ library(speedyseq)
 library(dada2)
 library(readxl)
 
-#Be sure to download all rds objects from the rds directory. 
+#Be sure to download all rds objects and data tables from the "rds_objects" and "metadata_tables" directories, respectively. 
 
-#####Section 1: Constructing Phyloseq Object with T. thermophilus Absolute Abundances as Counts
+##########DNA-BASED Analysis
 
+#####Section 1: Constructing phyloseq object with T. thermophilus absolute abundances as counts
 raw_ps_gtdb <- readRDS("raw_ps_gtdb")
 raw_ps_gtdb_Tt <- raw_ps_gtdb %>% subset_samples(dTRCs == "YES") %>% ps_filter() #subset to only samples that we care about (those with thiamin congeners measured)
 raw_ps_gtdb_comp <- transform(raw_ps_gtdb_Tt, "compositional") #Need to make raw compositional phyloseq, subset the otu table, multiply this otu table by abs. abund., and remake phyloseq object 
@@ -44,8 +45,9 @@ Tt_gtdb_ps <- Tt_gtdb_ps %>%
   subset_samples(Sampling %in% good_seasons) %>% 
   subset_samples(Type %in% good_type) %>% 
   ps_filter() #Final phyloseq used for absolute abundance figures; we don't need to worry about contaminants because we'll be subsetting specific taxa anyway. 
-
 #####
+
+#####Section 2: Assessing trends in thiamin congener concentrations and 16S absolute abundances 
 
 
 
