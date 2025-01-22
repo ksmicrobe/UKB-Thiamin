@@ -1,0 +1,83 @@
+library(tidyverse)
+library(phyloseq)
+library(readxl)
+library(dada2)
+
+
+setwd("~/OneDrive/RStudio")
+
+path <- "~/BIOINFORMATICS/UKB_MiSeq/trimmed"
+fnFs <- sort(list.files(path, pattern="R1_val_1.fq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="R2_val_2.fq.gz", full.names = TRUE))
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+plotQualityProfile(fnFs, aggregate = TRUE)
+plotQualityProfile(fnRs, aggregate = TRUE)
+
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
+
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, maxEE = c(2,5), verbose = TRUE)
+
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+saveRDS(errF, "errors_F_UKB")
+saveRDS(errR, "errors_R_UKB")
+
+dadaFs <- dada(filtFs, err=errF, multithread=TRUE, pool = "pseudo")
+dadaRs <- dada(filtRs, err=errR, multithread=TRUE, pool = "pseudo")
+saveRDS(dadaFs, "dada_F_UKB")
+saveRDS(dadaRs, "dada_R_UKB")
+
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+seqtab <- makeSequenceTable(mergers)
+saveRDS(seqtab, "seqtab_UKB")
+table(nchar(getSequences(seqtab)))
+seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 250:256]
+View(seqtab2)
+
+seqtab.nochim <- removeBimeraDenovo(seqtab2, method="consensus", multithread=TRUE, verbose=TRUE)
+saveRDS(seqtab.nochim, "seqtab_nochim_UKB")
+sum(seqtab.nochim)/sum(seqtab2)
+seqtab_nochim2 <- data.frame(readRDS("seqtab_nochim_UKB"))
+
+silva <- "~/BIOINFORMATICS/silva_files/silva_nr99_v138.1_train_set.fa.gz"
+silva_w_species <- "~/BIOINFORMATICS/silva_files/silva_nr99_v138.1_wSpecies_train_set.fa.gz"
+
+ukb_taxa <- assignTaxonomy(seqtab.nochim, silva_w_species, multithread = TRUE)
+ukb_taxa <- data.frame(ukb_taxa)
+saveRDS(ukb_taxa, "UKB_taxa_sp")
+
+ukb_seqtab <- data.frame(t(readRDS("seqtab_nochim_UKB")))
+ukb_taxa <- data.frame(readRDS("UKB_taxa_sp"))
+
+phylo_for_Tt_calc <- phyloseq(otu_table(as.matrix(ukb_seqtab), taxa_are_rows = T), 
+                              tax_table(as.matrix(ukb_taxa)))
+
+phylo_Tt <- filter_tax_table(phylo_for_Tt_calc, Phylum %in% "Deinococcota") #These taxa are strictly hyperthermophilic and were not naturally found in the UKB, so it's save to do this at the phylum-level. 
+phylo_Tt <- filter_tax_table(phylo_Tt, Order %in% "Thermales")
+phylo_nonTt <- subset_taxa(physeq = phylo_for_Tt_calc, !Phylum %in% "Deinococcota")
+
+Tt_counts <- data.frame(otu_table(phylo_nonTt))
+colnames(Tt_counts) <- ukb_meta$Sample
+Tt_taxa <- data.frame(tax_table(phylo_nonTt))
+Tt_taxa$Species <- ifelse(Tt_taxa$Species != "NA", 
+                                paste0(Tt_taxa$Genus, " ", 
+                                       Tt_taxa$Species), 
+                          Tt_taxa$Species)
+phylo_nonTt <- phyloseq(tax_table(as.matrix(Tt_taxa)), 
+                        otu_table(as.matrix(Tt_counts), taxa_are_rows = T), 
+                        sample_data(ukb_meta))
+
+saveRDS(phylo_nonTt, "raw_ps_UKB_noTt")
+
+Tt <- data.frame(otu_table(phylo_Tt))
+nonTt <- data.frame(otu_table(phylo_nonTt))
+Tt_sums <- data.frame("Tt_reads" = colSums(Tt), "Tot_reads" = colSums(nonTt))
+Tt_sums$"Sample" <- rownames(Tt_sums)
+rownames(Tt_sums) <- 1:length(Tt_sums[,1])
+write_csv2(Tt_sums, "Tt_sums.csv")
+
+
