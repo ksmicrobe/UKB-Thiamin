@@ -1,1 +1,77 @@
-#####Absolute Abundance 
+library(microbiomeMarker)
+library(phyloseq)
+library(microbiome)
+library(tidyverse)
+library(ggplot2)
+library(microViz)
+library(RColorBrewer)
+library(rcartocolor)
+library(rcompanion)
+library(vegan)
+library(wesanderson)
+library(otu2ot)
+library(speedyseq)
+library(dada2)
+library(readxl)
+
+#Be sure to download all rds objects from the rds directory. 
+
+#####Section 1: Constructing Phyloseq Object with T. thermophilus Absolute Abundances as Counts
+
+raw_ps_gtdb <- readRDS("raw_ps_gtdb")
+raw_ps_gtdb_Tt <- raw_ps_gtdb %>% subset_samples(dTRCs == "YES") %>% ps_filter() #subset to only samples that we care about (those with thiamin congeners measured)
+raw_ps_gtdb_comp <- transform(raw_ps_gtdb_Tt, "compositional") #Need to make raw compositional phyloseq, subset the otu table, multiply this otu table by abs. abund., and remake phyloseq object 
+abs_abund <- as.numeric(sample_data(raw_ps_gtdb_comp)$X16S_mL) 
+comp_gtdb_ASV <- data.frame(t(otu_table(raw_ps_gtdb_comp)))
+Tt_gtdb_ASV <- data.frame(mapply('*', comp_gtdb_ASV, abs_abund)) #Multiply total 16S copies/mL by each data frame cell (ASV relative abundances) to get individual ASV copies/mL
+Tt_gtdb_ASV <- data.frame(t(Tt_gtdb_ASV))
+Tt_gtdb_tax <- data.frame(tax_table(raw_ps_gtdb_comp))
+Tt_gtdb_meta <- data.frame(sample_data(raw_ps_gtdb_comp))
+rownames(Tt_gtdb_ASV) <- rownames(Tt_gtdb_tax)
+colnames(Tt_gtdb_ASV) <- Tt_gtdb_meta$Sample
+rownames(Tt_gtdb_meta) <- colnames(Tt_gtdb_ASV)
+
+Tt_gtdb_ps <- phyloseq(tax_table(as.matrix(Tt_gtdb_tax)), #Do this after running below code!!
+                      otu_table(as.matrix(Tt_gtdb_ASV), taxa_are_rows = T), 
+                      sample_data(Tt_gtdb_meta))
+
+good_seasons <- c(2,3)
+good_type <- c("SW","HZ")
+
+Tt_gtdb_ps <- Tt_gtdb_ps %>% 
+  subset_taxa(!Kingdom %in% NA) %>% 
+  subset_taxa(!Phylum %in% NA) %>% 
+  subset_samples(Sampling %in% good_seasons) %>% 
+  subset_samples(Type %in% good_type) %>% 
+  ps_filter() #Final phyloseq used for absolute abundance figures; we don't need to worry about contaminants because we'll be subsetting specific taxa anyway. 
+
+#####
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
