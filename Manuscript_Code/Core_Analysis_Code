@@ -191,7 +191,7 @@ set.seed(1998)
 cor.test(Nums$Micro, Nums$Bacimethrin, "spearman", alternative = "two.sided") 
 cor.test(Nums$AFA_MDT14a, Nums$Bacimethrin, "spearman", alternative = "two.sided")
 cor.test(Nums$AFA_NIES81, Nums$Bacimethrin, "spearman", alternative = "two.sided")
-cor.test(Nums$Dolicho, Nums$Bacimethrin, "spearman", alternative = "two.sided") #Significant correlations between CyanoHAB abs. abund. and bacimethrin 
+cor.test(Nums$Dolicho, Nums$Bacimethrin, "spearman", alternative = "two.sided") #Significant correlations between CyanoHAB abs. abund. and bacimethrin (untransformed concentration values)
 
 cols <- distinct_palette(n = 4, add = NA)
 samp_ord <- c("SUSSW3", "HAGSW3", "PELSW3", "HKMSW3", "RSPSW3", "WIDSW3", "LINSW3", "WRSW3", 
@@ -222,6 +222,106 @@ HABSeq %>% ps_mutate(across(Site, str_replace, "SW", "")) %>%
                sample_seriation = "Identity") #Color scheme changes each time; manuscript figure modified in powerpoint
 ##
 ###
+
+###MicroViz plots
+ps_gtdb <- readRDS("ps_gtdb")
+ps_gtdb <- ps_gtdb %>% tax_fix(unknowns = NA)
+ps_gtdb %>% ord_explore() #All plots made in the shiny app- Aitchison distance and PCoA
+
+#Shiny app code: 
+your_phyloseq %>%
+ tax_transform(rank = "ASV", trans = "identity") %>%
+ dist_calc(dist = "aitchison") %>%
+ ord_calc(
+  method = "PCoA"
+ ) %>% 
+ ord_plot(
+  axes = c(1, 2),
+  colour = "HAB_biomass", fill = "HAB_biomass",
+  shape = "Location", alpha = 0.8,
+  size = 3
+ ) + 
+ scale_shape_girafe_filled() +
+ stat_chull(
+  ggplot2::aes(colour = HAB_biomass)
+ )
+
+#For stacked barplots, set "Site" as labels, "HAB_biomass" as facets, and Family (top 17) as rank
+###
+##########
+
+##########RNA-BASED Analysis
+###mRNA taxonomy-based ordination and taxonomy plots 
+cosmos_taxa <- data.frame(read_excel(path = "/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/cosmosID_taxa.xlsx"))
+cosmos_counts <- data.frame(read_excel(path = "/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/cosmosID_counts.xlsx"))
+
+rna_samples <- colnames(cosmos_counts)
+location <- c("Reservoir", "Reservoir", "River", "Lake", "Lake", "Lake", "Lake", "River", 
+              "Reservoir", "Reservoir", "Spring", "Lake", "River", "Lake", "River", "Lake")
+bloom <- c("High", "High", "High", "High", "High", "High", "Low", "Low", 
+              "Low", "Low", "Low", "Low", "Low", "Low", "Low", "Low")
+
+HAB_biomass <- as.numeric(c(1.020527e+06, 1.688248e+03, 7.544576e+04, 2.411194e+04, 2.258718e+04, 2.283112e+05, 
+                            6.831346e+02, 1.673012e+02, 8.765233e+01, 1.342924e+03, 9.861321e+00, 1.084612e+01, 
+                            0.000000e+00, 0.000000e+00, 9.150774e+00, 7.307005e+01))
+
+Baci <- as.numeric(c(7.5035439999999998, 10.287667669999999, 27.86715667, 8.3449735, 
+                     3.1907813329999999, 6.1613815000000001, 3.1686746669999999, 12.87204867, 
+                     2.1525919999999998, 8.9936463329999992, 0.190109, 5.1231766670000001, 
+                     1.390201333, 2.8010704999999998, 3.1831489999999998, 1.4036785000000001))
+
+cosmos_meta <- data.frame(Sample = rna_samples, Location = location, 
+                          Bloom = bloom, HAB_biomass = HAB_biomass, Bacimethrin = Baci)
+
+rownames(cosmos_meta) <- colnames(cosmos_counts)
+
+cosmos_seq <- phyloseq(otu_table(as.matrix(cosmos_counts), taxa_are_rows = T), 
+                       tax_table(as.matrix(cosmos_taxa)), sample_data(cosmos_meta)) %>% 
+  subset_taxa(!Genus %in% "Thermus")
+cosmos_seq %>% ord_explore() #Generate the same PCoA and stacked barplot as the previous 16S section (same parameters)
+                             #For ordination, species-level and set colour to "Bloom"
+###
+
+###Redundancy analysis
+dat <- data.frame(sample_data(ps_gtdb)) %>% dplyr::select(Site, Location, X16S_mL, B1, HMP,
+                                                   AmMP, cHET, HET, Phosphate, Nitrite_Nitrate, 
+                                                   Ammonia, Temp, DO, Baci, HAB_biomass, Season)
+rownames(dat) <- dat$Site
+dat2 <- data.frame(sample_data(cosmos_seq)) %>% rename(Site = Sample)
+
+dat_tot <- left_join(dat2, dat, by = "Site")
+rownames(dat_tot) <- dat_tot$Site
+
+cosmos_seq_rda <- cosmos_seq %>% aggregate_taxa("Strain") %>% transform("clr")
+rda_rna_mat <- data.frame(otu_table(cosmos_seq_rda))
+rda_rna_mat <- as.matrix(t(rda_rna_mat))
+dat_tot <- dat_tot %>% mutate(HAB = str_replace(HAB_biomass.y, "High", "1"), 
+                   HAB = str_replace(HAB, "Low", "0"), 
+                   season = str_replace(Season, "Spring", "0"), 
+                   season = str_replace(season, "Summer", "1"))
+dat_rda <- dat_tot[,c(5,7:17, 21,22)] %>% mutate(across(X16S_mL:season, as.numeric))
+dat_rda <- dat_rda %>% mutate(NP = (sum(Nitrite_Nitrate,Ammonia)/Phosphate), 
+                   NP = str_replace(NP, "Inf", "0"), 
+                   across(NP, as.numeric))
+
+set.seed(2003)
+rda <- rda(rda_rna_mat ~ log(HMP+AmMP) + log(Baci) + DO +
+             log(B1) + log(cHET+HET) + HAB + season, 
+           data = dat_rda, z = c(X16S_mL))
+
+anova.cca(rda) #0.00
+set.seed(1091)
+anova.cca(rda, by = "term", permutations = 10000)
+vif.cca(rda) #Check for degree of multicollinearity
+RsquareAdj(rda) #Gives actual quantitative values of the model
+###
+
+
+
+
+
+
+
 
 
 
