@@ -314,9 +314,115 @@ set.seed(1091)
 anova.cca(rda, by = "term", permutations = 10000)
 vif.cca(rda) #Check for degree of multicollinearity
 RsquareAdj(rda) #Gives actual quantitative values of the model
+
+cosmos_seq_rda_final %>%
+  ord_calc(
+    constraints = c("Bacimethrin", "Thiamin", "Pyrimidine", 
+                    "Thiazole", "season", "HAB", "DO"),
+    method = "RDA", 
+  ) %>% 
+  ord_plot(
+    axes = c(1, 2), plot_taxa = F,
+    colour = "Bloom",
+    shape = "season", alpha = 0.8,
+    size = 3, 
+    constraint_lab_style = 
+      constraint_lab_style(perpendicular = F, 
+                           justify = "center", max_angle = 90, vjust = 100,
+                           type = "text", fontface = "bold", colour = "black"), 
+    constraint_vec_length = NA, constraint_vec_style = 
+      vec_constraint(colour = "black")) #You can toggle vector labels on and off in this final plot (vjust = 100 so they are way off to the side)- we added the labels in powerpoint so they looked better 
 ###
 
+###Lefse2 bubble plot
+lefse_res <- read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/UKB_genome_B1_res.xlsx")
+lefse_res_top <- lefse_res[1:30,] %>% 
+  mutate(label = case_when(
+    `P-Value` > 0.05 ~ "",
+    `P-Value` > 0.01 ~ "*",
+    `P-Value` > 0.001 ~ "**",
+    !is.na('P-Value') ~ "***",
+    TRUE ~ NA_character_
+  ))
 
+lefse_res_top <- lefse_res_top %>% mutate(Strain = paste(`GTDB Annotation`, label, sep = "")) %>% 
+  rename(`CyanoHAB Bloom Biomass` = `HAB Enrichment`)
+
+lefse_res_top %>% 
+  ggplot(aes(x = factor(`CyanoHAB Bloom Biomass`, 
+                                        levels = c("Low", "High")), 
+                             y = Strain, color = `CyanoHAB Bloom Biomass`)) +
+  geom_point(stat = "identity", aes(size = `LDA Score`)) +
+  labs(x = "", y = "", color = "CyanoHAB \n Biomass") + theme_light() +
+  scale_size_continuous(breaks = c(3.5, 4.5, 5.5), limits = c(3.5, 5.5)) +
+  theme(axis.text.x = 
+                         element_text(size = 8, face = 'bold'), 
+                       legend.position = "left", 
+                       legend.title = element_text(size = 10)) #Bubble size corresponds to LDA score; all other figure components were done in powerpoint. 
+###
+
+###Curated functional analysis 
+cosmos_functions <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/Cosmos_GO_functions.xlsx"))
+cosmos_counts_functions <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/Cosmos_GO_CPM.xlsx"))
+cosmos_GO_meta <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/Cosmos_GO_meta.xlsx"))
+
+colnames(cosmos_counts_functions) == cosmos_GO_meta$Site
+rownames(cosmos_GO_meta) <- colnames(cosmos_counts_functions)
+
+ps_cosmos_functions <- phyloseq(phyloseq::tax_table(as.matrix(cosmos_functions)), 
+         phyloseq::otu_table(as.matrix(cosmos_counts_functions), taxa_are_rows = T), 
+         sample_data(cosmos_GO_meta))
+
+ps_cosmos_functions_for_plot <- ps_cosmos_functions %>% aggregate_taxa("Gene_Category") %>% 
+  tax_fix()
+
+comp_heatmap(data = ps_cosmos_functions_for_plot, taxa = NA,
+               name = 'CPM', sample_ser_dist = "bray", tax_ser_dist = "bray",
+               tax_ser_counts = TRUE, sample_ser_counts = TRUE, 
+               taxa_side = "left", 
+               sample_names_show = TRUE, 
+               colors = heat_palette(palette = rev(RColorBrewer::brewer.pal(6, "RdYlBu")), 
+                                     breaks = c(0, 1e1, 1e2, 1e3, 1e4, 1e5)), 
+               heatmap_legend_param = 
+                 list(at = c(0, 1e1, 1e2, 1e3, 1e4, 1e5), break_dist = 1)) #Heatmap of higher-level functions 
+
+ps_cosmos_functions_new <- ps_cosmos_functions %>% tax_agg("Comb_function") %>% transform("clr")
+
+ps_cosmos_functions_new %>%  
+  cor_heatmap(vars = c("log_Abundance", "log_B1", "log_HMP", "log_Bacimethrin", 
+                       "log_cHET", "log_AmMP", "log_HET"), cor = "spearman", 
+              taxa = tax_top(ps_cosmos_functions_new, 30))
+
+correlations_df <- ps_cosmos_functions_new %>% subset_samples(Site != "SUS_HZ_PB") %>% ps_filter() %>% 
+  tax_model(
+    variables = list("B1", "HMP", "cHET", "AmMP", "HET", "X16S_mL", "Bacimethrin"), 
+    type = microViz::cor_test, method = "spearman", 
+    return_psx = FALSE, verbose = FALSE, rank = "unique") %>% 
+  tax_models2stats(rank = "unique")
+
+correlations_df_sig <- correlations_df %>% dplyr::filter(p.value < 0.05)
+
+var_order <- c("log_Abundance", "log_B1", "log_cHET", "log_HMP", "log_Bacimethrin", "log_AmMP", "log_HET")
+var_order <- c("X16S_mL", "B1", "cHET", "HMP", "Bacimethrin", "AmMP", "HET")
+
+correlations_df_sig %>% 
+  mutate(p.FDR = p.adjust(p.value, method = "fdr")) %>% 
+  ggplot(aes(x = term, y = taxon)) +
+  geom_raster(aes(fill = estimate)) +
+  geom_point(
+    data = function(x) filter(x, p.FDR < 0.05),
+    shape = "asterisk", size = 1) +
+  geom_point(
+    data = function(x) filter(x, p.FDR < 0.01),
+    shape = "asterisk", size = 2) +
+  scale_fill_distiller(palette = "RdYlBu", limits = c(-0.85, 0.85)) + 
+  theme_minimal() +
+  labs(
+    x = NULL, y = NULL, fill = "Spearman's Rank Correlation") +
+  scale_x_discrete(limits = var_order, labels = c(bquote('16S '~mL^-1), "Thiamin", 
+                                                  "cHET", "HMP", "Bacimethrin", "AmMP", "HET")) +
+  theme(axis.text.x = element_text(angle = -45, vjust = -.6), legend.position = "top")
+###
 
 
 
