@@ -406,7 +406,7 @@ var_order <- c("log_Abundance", "log_B1", "log_cHET", "log_HMP", "log_Bacimethri
 var_order <- c("X16S_mL", "B1", "cHET", "HMP", "Bacimethrin", "AmMP", "HET")
 
 correlations_df_sig %>% 
-  mutate(p.FDR = p.adjust(p.value, method = "fdr")) %>% #Use corrected p-values 
+  mutate(p.FDR = p.adjust(p.value, method = "fdr")) %>% #Use corrected p-values with Benjamini & Hochberg method
   ggplot(aes(x = term, y = taxon)) +
   geom_raster(aes(fill = estimate)) +
   geom_point(
