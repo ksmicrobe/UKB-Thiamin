@@ -202,14 +202,7 @@ cols <- distinct_palette(n = 4, add = NA)
 samp_ord <- c("SUSSW3", "HAGSW3", "PELSW3", "HKMSW3", "RSPSW3", "WIDSW3", "LINSW3", "WRSW3", 
               "WIRSW3", "SPRSW3", "CLRSW3", "GBRSW3","SUSSW2", "HAGSW2", "PELSW2", "HKMSW2", 
               "RSPSW2", "WIDSW2", "LINSW2", "WRSW2", "WIRSW2", "SPRSW2", "CLRSW2", "GBRSW2")
-tax_ord <- c("Dolichospermum NIES41 circinale", "Dolichospermum NIES41 crassum", 
-             "Dolichospermum NIES41 sigmoideum", "Dolichospermum NIES41 spiroides", 
-             "Dolichospermum NIES41 Genus", "Aphanizomenon MDT14a flos-aquae", 
-             "Aphanizomenon NIES81 flos-aquae", "Aphanizomenon MDT14a Genus", 
-             "Aphanizomenon NIES81 Genus", "Microcystis PCC-7914 aeruginosa", 
-             "Microcystis PCC-7914 Genus")
-HABSeq <- HABSeq %>% ps_reorder(sample_order = samp_ord) 
-HABSeq <- HABSeq %>% tax_reorder(tax_order = tax_ord)
+HABSeq <- HABSeq %>% ps_reorder(sample_order = samp_ord) %>% tax_fix()
 
 HABSeq %>% ps_mutate(across(Site, str_replace, "SW", "")) %>% 
   aggregate_taxa("Genus") %>% comp_heatmap(name = 'Cells per mL',
@@ -220,10 +213,7 @@ HABSeq %>% ps_mutate(across(Site, str_replace, "SW", "")) %>%
                colors = heat_palette(palette = rev(RColorBrewer::brewer.pal(7, "RdYlBu")), 
                                      breaks = c(0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6)), 
                heatmap_legend_param = 
-                 list(at = c(0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6), break_dist = 1), 
-               sample_anno = sampleAnnotation(Location = 
-                                                anno_sample("Geography"),
-                                              border = T), 
+                 list(at = c(0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6), break_dist = 1),
                sample_seriation = "Identity") #Color scheme changes each time; manuscript figure modified in powerpoint
 ##
 ###
