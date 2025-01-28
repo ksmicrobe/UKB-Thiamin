@@ -187,6 +187,11 @@ AFA_MDT14a <- colSums(data.frame(otu_table(HABSeq_gen))[2,])
 AFA_NIES81 <- colSums(data.frame(otu_table(HABSeq_gen))[3,])
 Dolicho <- colSums(data.frame(otu_table(HABSeq_gen))[4,])
 
+Nums <- data.frame(Micro = Micro, Dolicho = Dolicho, AFA_MDT14a = AFA_MDT14a, 
+                   AFA_NIES81 = AFA_NIES81, Bacimethrin = as.numeric(sample_data(HABSeq)$Baci))
+
+nums <- rowSums(data.frame(otu_table(HABSeq_gen)))
+
 set.seed(1998)
 cor.test(Nums$Micro, Nums$Bacimethrin, "spearman", alternative = "two.sided") 
 cor.test(Nums$AFA_MDT14a, Nums$Bacimethrin, "spearman", alternative = "two.sided")
