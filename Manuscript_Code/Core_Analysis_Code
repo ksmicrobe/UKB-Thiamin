@@ -368,10 +368,12 @@ ps_cosmos_functions <- phyloseq(phyloseq::tax_table(as.matrix(cosmos_functions))
          phyloseq::otu_table(as.matrix(cosmos_counts_functions), taxa_are_rows = T), 
          sample_data(cosmos_GO_meta))
 
-ps_cosmos_functions_for_plot <- ps_cosmos_functions %>% aggregate_taxa("Gene_Category") %>% 
+
+
+ps_cosmos_functions_for_plot <- ps_cosmos_functions %>% aggregate_taxa("Function") %>% 
   tax_fix()
 
-comp_heatmap(data = ps_cosmos_functions_for_plot, taxa = NA,
+ps_cosmos_functions_for_plot %>% comp_heatmap(taxa = NA,
                name = 'CPM', sample_ser_dist = "bray", tax_ser_dist = "bray",
                tax_ser_counts = TRUE, sample_ser_counts = TRUE, 
                taxa_side = "left", 
@@ -379,7 +381,7 @@ comp_heatmap(data = ps_cosmos_functions_for_plot, taxa = NA,
                colors = heat_palette(palette = rev(RColorBrewer::brewer.pal(6, "RdYlBu")), 
                                      breaks = c(0, 1e1, 1e2, 1e3, 1e4, 1e5)), 
                heatmap_legend_param = 
-                 list(at = c(0, 1e1, 1e2, 1e3, 1e4, 1e5), break_dist = 1)) #Heatmap of higher-level functions 
+                 list(at = c(0, 1e1, 1e2, 1e3, 1e4, 1e5), break_dist = 1))
 
 ps_cosmos_functions_new <- ps_cosmos_functions %>% tax_agg("Comb_function") %>% transform("clr")
 
@@ -396,6 +398,9 @@ correlations_df <- ps_cosmos_functions_new %>% subset_samples(Site != "SUS_HZ_PB
   tax_models2stats(rank = "unique")
 
 correlations_df_sig <- correlations_df %>% dplyr::filter(p.value < 0.05)
+
+sig_functions <- unique(correlations_df_sig$taxon)
+sig_sig_functions <- sig_functions[1:30]
 
 var_order <- c("log_Abundance", "log_B1", "log_cHET", "log_HMP", "log_Bacimethrin", "log_AmMP", "log_HET")
 var_order <- c("X16S_mL", "B1", "cHET", "HMP", "Bacimethrin", "AmMP", "HET")
@@ -417,6 +422,63 @@ correlations_df_sig %>%
   scale_x_discrete(limits = var_order, labels = c(bquote('16S '~mL^-1), "Thiamin", 
                                                   "cHET", "HMP", "Bacimethrin", "AmMP", "HET")) +
   theme(axis.text.x = element_text(angle = -45, vjust = -.6), legend.position = "top")
+
+ps_cosmos_functions_for_plot <- ps_cosmos_functions_for_plot %>% subset_taxa(Function %in% sig_sig_functions)
+
+ps_cosmos_functions_for_plot %>% comp_heatmap(taxa = NA,
+               name = 'CPM', sample_ser_dist = "bray", tax_ser_dist = "bray",
+               tax_ser_counts = TRUE, sample_ser_counts = TRUE, 
+               taxa_side = "left", 
+               sample_names_show = TRUE, 
+               colors = heat_palette(palette = rev(RColorBrewer::brewer.pal(4, "RdYlBu")), 
+                                     breaks = c(0, 1e1, 1e2, 1e3)), 
+               heatmap_legend_param = 
+                 list(at = c(0, 1e1, 1e2, 1e3), break_dist = 1))
+
+##Calculate Z-scores
+cosmos_ps_cat <- ps_cosmos_functions %>% aggregate_taxa("Gene_Category")
+cosmos_counts_functions_category <- data.frame(cosmos_ps_cat@otu_table)
+cosmos_functions_category <- data.frame(cosmos_ps_cat@tax_table)
+rownames(cosmos_counts_functions_category) <- cosmos_functions_category$Gene_Category
+zScores <- apply(cosmos_counts_functions_category, 1, function(x) (x - mean(x)) / sd(x))
+
+tot_dat <- cbind(zScores, sample_data(data.frame(cosmos_ps_cat@sam_data))) 
+tot_dat <- tot_dat %>% group_by(Bloom) %>% summarise(across(where(is.numeric), mean))
+rownames(tot_dat) <- tot_dat$Bloom
+
+z_otu <- data.frame(tot_dat[,2:30], row.names = tot_dat$Bloom)
+colnames(z_otu) <- gsub("\\.", " ", colnames(z_otu))
+z_tax <- data.frame(ps_cosmos_z@tax_table)
+rownames(z_tax) == colnames(z_otu)
+z_met <- data.frame(tot_dat[,30:48], row.names = tot_dat$Bloom)
+
+z_ps <- phyloseq(otu_table(as.matrix(z_otu), taxa_are_rows = F), 
+                 tax_table(as.matrix(z_tax)), 
+                 sample_data(z_met))
+comp_heatmap(data = z_ps, taxa = NA,
+             name = 'Z-Score', tax_ser_dist = "euclidean", 
+             tax_ser_counts = TRUE, 
+             taxa_side = "left", 
+             sample_names_show = TRUE) 
+
+zScores_flip <- data.frame(t(zScores))
+
+p_from_z <- function(z) {
+  2 * pnorm(-abs(z)) # Two-tailed p-value
+}
+
+dat_z_to_p <- dat_zScores %>% 
+  mutate_all(p_from_z) %>% 
+  filter(if_any(everything(), ~ . < 0.05)) %>% 
+  t() %>% as.data.frame()
+dat_z_to_p$"Pathway" <- rownames(dat_z_to_p)
+
+long_dat_z_to_p <- dat_z_to_p %>% 
+  pivot_longer(names_to = "Sample", cols = CLR_PB:PEL_B, 
+               values_to = "p")
+
+long_dat_z_to_p_signif <- long_dat_z_to_p %>% filter(p < 0.05) %>% 
+  arrange(match(Sample, hab_order)) %>% mutate(q = p.adjust(p, method = "fdr"))
 ###
 
 
