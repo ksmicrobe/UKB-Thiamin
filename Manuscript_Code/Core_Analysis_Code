@@ -481,6 +481,58 @@ long_dat_z_to_p_signif <- long_dat_z_to_p %>% filter(p < 0.05) %>%
   arrange(match(Sample, hab_order)) %>% mutate(q = p.adjust(p, method = "fdr"))
 ###
 
+###PERMANOVA, betadisper, permutest, and ANOSIM
+##DNA
+dna_meta <- data.frame(ps_gtdb@sam_data)
+ps_gtdb_clr <- ps_gtdb %>% microbiome::transform('clr')
+dna_dist <- ps_gtdb_clr %>% phyloseq::distance(method = "euclidean")
+set.seed(10998)
+adonis2(dna_dist ~ Location, data = dna_meta) #p = 0.004
+adonis2(dna_dist ~ HAB_biomass, data = dna_meta) #p = 0.001
+adonis2(dna_dist ~ Season, data = dna_meta) #p = 0.001
+
+beta1.dna <- betadisper(dna_dist, group = dna_meta$Location)
+permutest(beta1.dna, pairwise = TRUE)
+
+beta1.dna <- betadisper(dna_dist, group = dna_meta$HAB_biomass) #sig
+permutest(beta1.dna, pairwise = TRUE)
+
+beta1.dna <- betadisper(dna_dist, group = dna_meta$Season)
+permutest(beta1.dna, pairwise = TRUE)
+
+set.seed(198)
+anosim(dna_dist, grouping = dna_meta$HAB_biomass, distance = "euclidean") #insig
+##
+##RNA
+locations <- c('Res', 'Res', 'Riv', 'Lake', 'Lake', 'Lake', 'Lake', 'Riv', 
+               'Res', 'Res', 'Sp', 'Lake', 'Riv', 'Lake', 'Riv', 'Lake')
+seasons <-c('B', 'B', 'B', 'B', 'B', 'B', 'PB', 'PB', 
+            'PB', 'PB', 'PB', 'PB', 'PB', 'PB', 'B', 'B')
+
+cosmos_seq <- cosmos_seq %>% speedyseq::mutate_sample_data(Location = locations, 
+                                                           Season = seasons)
+
+
+rna_meta <- data.frame(cosmos_seq@sam_data)
+cosmos_seq_clr <- cosmos_seq %>% microbiome::transform('clr')
+rna_dist <- cosmos_seq_clr %>% phyloseq::distance(method = "euclidean")
+set.seed(10991)
+adonis2(rna_dist ~ Location, data = rna_meta) #p = 0.46
+adonis2(rna_dist ~ Bloom, data = rna_meta) #p = 0.002
+adonis2(rna_dist ~ Season, data = rna_meta) #p = 0.004
+
+beta1.rna <- betadisper(rna_dist, group = rna_meta$Location)
+permutest(beta1.rna, pairwise = TRUE)
+
+beta1.rna <- betadisper(rna_dist, group = rna_meta$Bloom)#sig
+permutest(beta1.rna, pairwise = TRUE)
+
+beta1.rna <- betadisper(rna_dist, group = rna_meta$Season)
+permutest(beta1.rna, pairwise = TRUE)
+
+set.seed(199)
+anosim(rna_dist, grouping = rna_meta$Bloom, distance = "euclidean")#sig- 0.665 (ANOSIM statistic)
+##
 
 
 
