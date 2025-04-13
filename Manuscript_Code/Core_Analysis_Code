@@ -14,6 +14,7 @@ library(speedyseq)
 library(dada2)
 library(readxl)
 library(ggh4x)
+library(scales)
 
 #Be sure to download all rds objects and data tables from the "rds_objects" and "metadata_tables" directories, respectively. 
 
@@ -34,17 +35,16 @@ colnames(Tt_gtdb_ASV) <- Tt_gtdb_meta$Sample
 rownames(Tt_gtdb_meta) <- colnames(Tt_gtdb_ASV)
 
 Tt_gtdb_ps <- phyloseq(tax_table(as.matrix(Tt_gtdb_tax)), #Do this after running below code!!
-                      otu_table(as.matrix(Tt_gtdb_ASV), taxa_are_rows = T), 
-                      sample_data(Tt_gtdb_meta))
+                       otu_table(as.matrix(Tt_gtdb_ASV), taxa_are_rows = T), 
+                       sample_data(Tt_gtdb_meta))
 
 good_seasons <- c(2,3)
-good_type <- c("SW","HZ")
 
 Tt_gtdb_ps <- Tt_gtdb_ps %>% 
   subset_taxa(!Kingdom %in% NA) %>% 
   subset_taxa(!Phylum %in% NA) %>% 
   subset_samples(Sampling %in% good_seasons) %>% 
-  subset_samples(Type %in% good_type) %>% 
+  subset_samples(Type %in% "SW") %>% 
   ps_filter() #Final phyloseq used for absolute abundance figures; we don't need to worry about contaminants because we'll be subsetting specific taxa anyway. 
 #####
 
@@ -55,18 +55,19 @@ ukb_dtrc_raw$Event <- as.character(ukb_dtrc_raw$Event)
 ukb_dtrc_raw$Component.Name <- factor(ukb_dtrc_raw$Component.Name, 
                                       levels = c("B1", "cHET", "HMP", "Baci", "HET", "AmMP"))
 
-ukb_dtrc_raw <- ukb_dtrc_raw %>% rename(sample_num = "...1")
+ukb_dtrc_raw <- ukb_dtrc_raw %>% dplyr::rename(sample_num = "...1") %>% 
+  filter(site_code != "SUS_HZ")
 
 ukb_dtrc_raw$type <- factor(ukb_dtrc_raw$type, 
-                                      levels = c("Spring", "Lake", "River", "Reservoir"))
+                            levels = c("Spring", "River", "Lake", "Reservoir"))
 
 ukb_dtrc_raw$avg <- as.numeric(ukb_dtrc_raw$avg)
 ukb_dtrc_raw$site_code <- factor(ukb_dtrc_raw$site_code, 
-                                 levels = c("SUS_HZ", "SUS_SW", "HAG", "PEL", 
+                                 levels = c("SUS_SW", "HAG", "PEL", 
                                             "HKM", "RSP", "WID", "LIN", 
                                             "WR", "WIR", "SPR", "CLR", "GBR"))
 
-site_pal <- c("#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", 
+site_pal <- c("#3cb44b", "#ffe119", "#4363d8", "#f58231", 
               "#911eb4", "#42d4f4", "#f032e6", "#575757", "black", 
               "#469990", "#00FF00", "#800000")
 
@@ -74,17 +75,17 @@ scientific_10 <- function(x) {
   parse(text=gsub("e", " %*% 10^", scales::scientific_format()(x))) #To set log scale labels 
 } #Formats log-scaled axes labels so they look better
 
-
 ukb_dtrc_raw %>% mutate(across(Component.Name, str_replace, 'Baci', 'Bacimethrin'),
                         across(site_code, str_replace, '_', ' '),
-                        across(Component.Name, str_replace, 'B1', 'Thiamin'),
+                        across(Component.Name, str_replace, 'B1', 'Thiamin'), 
                         Component.Name = factor(Component.Name, levels = 
                                                   c("Thiamin", "HET", "cHET", 
                                                     "AmMP", "HMP", "Bacimethrin")), 
                         site_code = factor(site_code, levels = 
-                                             c("SUS HZ", "SUS SW", "HAG", "PEL", 
+                                             c("SUS SW", "HAG", "PEL", 
                                                "HKM", "RSP", "WID", "LIN", 
-                                               "WR", "WIR", "SPR", "CLR", "GBR"))) %>% 
+                                               "WR", "WIR", "SPR", "CLR", "GBR"))) %>%  
+
   ggplot(aes(x=type, y = avg)) +
   geom_boxplot(outliers = F) +
   geom_point(aes(color = site_code, shape = Event), size = 1.5) +
@@ -93,9 +94,9 @@ ukb_dtrc_raw %>% mutate(across(Component.Name, str_replace, 'Baci', 'Bacimethrin
   labs(x = "", y = "pM") +
   theme(axis.text.x = element_text(angle = 45, hjust = .9), 
         strip.background = element_rect(fill = "white")) +
-  scale_x_discrete(labels = c("Spring", "Lake", "River", "Reservoir")) +
+  scale_x_discrete(labels = c("Spring", "River", "Lake", "Reservoir")) +
   scale_color_manual(name = "Sample Site", values = site_pal) +
-  scale_shape_discrete(labels = c("Pre-Bloom", "Bloom"), name = "Sampling Period") +
+  scale_shape_discrete(labels = c("Pre-Bloom", "Bloom"), name = "Sampling \n Period") +
   ggh4x::facetted_pos_scales(y = list(
     scale_y_log10(labels = scientific_10, limits = c(1e-1,2e4)), 
     scale_y_log10(labels = scientific_10, limits = c(1e-1,2e4)),
@@ -103,29 +104,31 @@ ukb_dtrc_raw %>% mutate(across(Component.Name, str_replace, 'Baci', 'Bacimethrin
     scale_y_log10(labels = scientific_10, limits = c(1e-1,2e3)),
     scale_y_log10(labels = scientific_10, limits = c(1e-1,2e3)), 
     scale_y_log10(labels = scientific_10, limits = c(1e-1,2e3))))
+
+ggsave("UKB_TRCs.pdf", height = 5, width = 10)
 ###
 
 ###Absolute Abundance
 ##Total 16S copies/mL in sites plot
 Tt_data <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/UKB_Tt_for_R.xlsx"))
-Tt_data <- Tt_data %>% mutate(across(X16S_mL:Ammonia, as.numeric)) %>% replace(is.na(.), 0)
-Tt_data_dTRC <- Tt_data %>% dplyr::select(X16S_mL:HET)
-Tt_data_dTRC_norm <- Tt_data_dTRC %>% mutate(across(X16S_mL:HET, log)) #Log transform data
+Tt_data <- Tt_data %>% mutate(across(X16S_mL:cyanoHAB_mL, as.numeric)) %>% replace(is.na(.), 0)
+Tt_data_dTRC <- Tt_data %>% dplyr::select(X16S_mL:HET, cyanoHAB_mL)
+Tt_data_dTRC_norm <- Tt_data_dTRC %>% mutate(across(X16S_mL:cyanoHAB_mL, log)) #Log transform data
 
 cor.test(y=Tt_data_dTRC_norm$X16S_mL, x=Tt_data_dTRC_norm$B1, method = "pearson")
 cor.test(y=Tt_data_dTRC_norm$X16S_mL, x=Tt_data_dTRC_norm$cHET, method = "pearson")
-cor.test(y=Tt_data_dTRC_norm$X16S_mL[-25], x=Tt_data_dTRC_norm$HMP[-25], method = "pearson")
+cor.test(y=Tt_data_dTRC_norm[-23,]$X16S_mL, x=Tt_data_dTRC_norm[-23,]$HMP, method = "pearson")
 cor.test(y=Tt_data_dTRC_norm$X16S_mL, x=Tt_data_dTRC_norm$Baci, method = "pearson")
 cor.test(y=Tt_data_dTRC_norm$X16S_mL, x=Tt_data_dTRC_norm$AmMP, method = "pearson")
 cor.test(y=Tt_data_dTRC_norm$X16S_mL, x=Tt_data_dTRC_norm$HET, method = "pearson") #Tests for significant correlations between absolute abundance and thiamin congeners and bacimethrin
 
 Tt_data %>% mutate(across(Site, str_replace, '_', ' '), 
                    Site = factor(Site, levels = 
-                                             c("SUS HZ", "SUS SW", "HAG", "PEL", 
-                                               "HKM", "RSP", "WID", "LIN", 
-                                               "WR", "WIR", "SPR", "CLR", "GBR")),
+                                   c("SUS SW", "HAG", "PEL", 
+                                     "HKM", "RSP", "WID", "LIN", 
+                                     "WR", "WIR", "SPR", "CLR", "GBR")),
                    Location = factor(Location, levels = 
-                                       c("Spring", "Lake", "River", "Reservoir"))) %>% 
+                                       c("Spring", "River", "Lake", "Reservoir"))) %>% 
   ggplot(aes(x=Location, y = X16S_mL)) +
   geom_boxplot(outliers = F)+
   geom_point(aes(color = Site, shape = Season), size = 3, position = "jitter") +
@@ -136,13 +139,43 @@ Tt_data %>% mutate(across(Site, str_replace, '_', ' '),
   scale_shape_discrete(labels = c("Spring", "Summer"), name = "Season") +
   theme(legend.position = "none")
 
-Tt_data_dTRC$"Site" <- Tt_data$Site
-Tt_data_dTRC %>% ggplot(aes(y = log(X16S_mL), x = log(B1), color = Site)) + 
-  geom_point() + theme_classic() + stat_smooth(method = "lm", 
-                                               col = "red", se = FALSE) +
-  labs(y = bquote('16S Copies '~mL^-1), x = "Thiamin") +
+Tt_data_dTRC_norm$"Site" <- Tt_data$Site
+Tt_data_dTRC_norm$"Season" <- Tt_data$Season
+  
+HAB_trc <- Tt_data_dTRC_norm %>% filter(cyanoHAB_mL != -Inf) %>% filter(HMP != -Inf)
+
+cor.test(y=HAB_trc$cyanoHAB_mL, x=HAB_trc$HMP, method = "pearson")
+cor.test(y=HAB_trc$cyanoHAB_mL, x=HAB_trc$Baci, method = "pearson")
+
+HMP_linmod <- lm(HMP ~ cyanoHAB_mL, data = HAB_trc)
+Baci_linmod <- lm(Baci ~ cyanoHAB_mL, data = HAB_trc)
+Baci_TRC_linmod <- lm(Baci ~ B1 + HMP, data = HAB_trc)
+
+summary(HMP_linmod)
+summary(Baci_linmod)
+summary(Baci_TRC_linmod)
+
+HAB_trc %>% ggplot(aes(y = HMP, x = cyanoHAB_mL)) + 
+  geom_point(size = 2, aes(shape = Season)) + theme_classic()  +
+  labs(x = 'log(cyanoHAB spp. Abundance)', y = "log(HMP)") +
   scale_color_manual(name = "Sample Site", values = site_pal) +
-  theme(legend.position = "none") #Repeat this same code for each thiamin congener and bacimethrin; remember that axes are log-transformed
+  theme(legend.position = "none") + 
+  stat_smooth(method = "lm", col = "black", se = T) +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 14))
+
+ggsave("HMP_cyanoHAB.pdf", height = 3, width = 4)
+
+HAB_trc %>% ggplot(aes(y = Baci, x = cyanoHAB_mL)) + 
+  geom_point(size = 2, aes(shape = Season)) + theme_classic()  +
+  labs(x = 'log(cyanoHAB spp. Abundance)', y = "log(Bacimethrin)") +
+  scale_color_manual(name = "Sample Site", values = site_pal) +
+  theme(legend.position = "none") + 
+  stat_smooth(method = "lm", col = "black", se = T) +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 14))
+
+ggsave("Baci_cyanoHAB.pdf", height = 3, width = 4)
 ##
 
 ##CyanoHAB Absolute abundance plot
