@@ -394,6 +394,13 @@ cosmos_functions <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStor
 cosmos_counts_functions <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/Cosmos_GO_CPM.xlsx"))
 cosmos_GO_meta <- data.frame(read_excel("/Users/kellyshannon/Library/CloudStorage/OneDrive-Personal/Documents/Cosmos_GO_meta.xlsx"))
 
+cosmos_GO_meta <- cosmos_GO_meta %>% mutate(CyanoHAB_Abundance = 
+                                              round(as.numeric(c(702.438814, 1368.800474, 1031317.323, 1706.044436, 
+                                                                 76047.69074, 24369.34678, 22768.21906, 231797.7451, 
+                                                                 172.359455, 92.987828, 11.365216, 1, 
+                                                                 11.400097, 1, 1, 9.434691, 74.711467)), digits = 1)) %>% #Add values of 1 to zero values for log transformations
+  mutate(CyanoHAB_Abundance_log = log(CyanoHAB_Abundance))
+
 colnames(cosmos_counts_functions) == cosmos_GO_meta$Site
 rownames(cosmos_GO_meta) <- colnames(cosmos_counts_functions)
 
@@ -418,10 +425,6 @@ ps_cosmos_functions_for_plot %>% comp_heatmap(taxa = NA,
 
 ps_cosmos_functions_new <- ps_cosmos_functions %>% tax_agg("Comb_function") %>% transform("clr")
 
-ps_cosmos_functions_new %>%  
-  cor_heatmap(vars = c("log_Abundance", "log_B1", "log_HMP", "log_Bacimethrin", 
-                       "log_cHET", "log_AmMP", "log_HET"), cor = "spearman", 
-              taxa = tax_top(ps_cosmos_functions_new, 30))
 
 correlations_df <- ps_cosmos_functions_new %>% subset_samples(Site != "SUS_HZ_PB") %>% ps_filter() %>% 
   tax_model(
@@ -433,10 +436,9 @@ correlations_df <- ps_cosmos_functions_new %>% subset_samples(Site != "SUS_HZ_PB
 correlations_df_sig <- correlations_df %>% dplyr::filter(p.value < 0.05)
 
 sig_functions <- unique(correlations_df_sig$taxon)
-sig_sig_functions <- sig_functions[1:30]
+sig_sig_functions <- sig_functions[1:35]
 
-var_order <- c("log_Abundance", "log_B1", "log_cHET", "log_HMP", "log_Bacimethrin", "log_AmMP", "log_HET")
-var_order <- c("X16S_mL", "B1", "cHET", "HMP", "Bacimethrin", "AmMP", "HET")
+var_order <- c("CyanoHAB_Abundance", "B1", "cHET", "HMP", "Bacimethrin", "AmMP", "HET")
 
 correlations_df_sig %>% 
   mutate(p.FDR = p.adjust(p.value, method = "fdr")) %>% #Use corrected p-values with Benjamini & Hochberg method
@@ -468,12 +470,16 @@ ps_cosmos_functions_for_plot %>% comp_heatmap(taxa = NA,
                heatmap_legend_param = 
                  list(at = c(0, 1e1, 1e2, 1e3), break_dist = 1))
 
-##Calculate Z-scores
+###Z-scores
 cosmos_ps_cat <- ps_cosmos_functions %>% aggregate_taxa("Gene_Category")
 cosmos_counts_functions_category <- data.frame(cosmos_ps_cat@otu_table)
 cosmos_functions_category <- data.frame(cosmos_ps_cat@tax_table)
 rownames(cosmos_counts_functions_category) <- cosmos_functions_category$Gene_Category
 zScores <- apply(cosmos_counts_functions_category, 1, function(x) (x - mean(x)) / sd(x))
+
+ps_cosmos_z <- phyloseq(otu_table(as.matrix(zScores), taxa_are_rows = F), 
+                        tax_table(as.matrix(cosmos_functions_category)), 
+                        sample_data(data.frame(cosmos_ps_cat@sam_data)))
 
 tot_dat <- cbind(zScores, sample_data(data.frame(cosmos_ps_cat@sam_data))) 
 tot_dat <- tot_dat %>% group_by(Bloom) %>% summarise(across(where(is.numeric), mean))
@@ -483,11 +489,13 @@ z_otu <- data.frame(tot_dat[,2:30], row.names = tot_dat$Bloom)
 colnames(z_otu) <- gsub("\\.", " ", colnames(z_otu))
 z_tax <- data.frame(ps_cosmos_z@tax_table)
 rownames(z_tax) == colnames(z_otu)
-z_met <- data.frame(tot_dat[,30:48], row.names = tot_dat$Bloom)
+z_met <- data.frame(tot_dat[,30:50], row.names = tot_dat$Bloom)
 
 z_ps <- phyloseq(otu_table(as.matrix(z_otu), taxa_are_rows = F), 
                  tax_table(as.matrix(z_tax)), 
                  sample_data(z_met))
+
+
 comp_heatmap(data = z_ps, taxa = NA,
              name = 'Z-Score', tax_ser_dist = "euclidean", 
              tax_ser_counts = TRUE, 
@@ -496,23 +504,26 @@ comp_heatmap(data = z_ps, taxa = NA,
 
 zScores_flip <- data.frame(t(zScores))
 
+
 p_from_z <- function(z) {
   2 * pnorm(-abs(z)) # Two-tailed p-value
 }
 
-dat_z_to_p <- dat_zScores %>% 
+dat_z_to_p <- zScores_flip %>% 
   mutate_all(p_from_z) %>% 
-  filter(if_any(everything(), ~ . < 0.05)) %>% 
-  t() %>% as.data.frame()
+  filter(if_any(everything(), ~ . < 0.05))
+
+
 dat_z_to_p$"Pathway" <- rownames(dat_z_to_p)
 
 long_dat_z_to_p <- dat_z_to_p %>% 
-  pivot_longer(names_to = "Sample", cols = CLR_PB:PEL_B, 
+  pivot_longer(names_to = "Sample", cols = WID_PB:PEL_B, 
                values_to = "p")
+
 
 long_dat_z_to_p_signif <- long_dat_z_to_p %>% filter(p < 0.05) %>% 
   arrange(match(Sample, hab_order)) %>% mutate(q = p.adjust(p, method = "fdr"))
-###
+##
 
 ###PERMANOVA, betadisper, permutest, and ANOSIM
 ##DNA
