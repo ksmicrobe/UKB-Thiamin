@@ -399,7 +399,7 @@ rownames(cosmos_GO_meta) <- colnames(cosmos_counts_functions)
 
 ps_cosmos_functions <- phyloseq(phyloseq::tax_table(as.matrix(cosmos_functions)), 
          phyloseq::otu_table(as.matrix(cosmos_counts_functions), taxa_are_rows = T), 
-         sample_data(cosmos_GO_meta))
+         sample_data(cosmos_GO_meta)) %>% subset_samples(!Site %in% "SUS_HZ_PB")
 
 
 
