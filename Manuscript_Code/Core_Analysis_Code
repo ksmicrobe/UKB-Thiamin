@@ -341,7 +341,7 @@ anova.cca(rda) #0.00
 set.seed(1091)
 anova.cca(rda, by = "term", permutations = 10000)
 vif.cca(rda) #Check for degree of multicollinearity
-RsquareAdj(rda) #Gives actual quantitative values of the model
+RsquareAdj(rda) 
 
 cosmos_seq_rda_final %>%
   ord_calc(
